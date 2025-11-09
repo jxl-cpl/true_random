@@ -21,3 +21,8 @@
 ## Installation
 Just include `true_random.py` in your project.
 Works with python 3.10+.
+
+## Refs
+- [`secrets`](https://docs.python.org/3/library/secrets.html)
+- [NIST SP 800-90A](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-90A.pdf)
+- [Box-Muller Transform](https://en.wikipedia.org/wiki/Box–Muller_transform)
