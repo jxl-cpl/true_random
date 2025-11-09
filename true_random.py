@@ -22,10 +22,10 @@ class TRandom:
 
         width = stop - start
         
-        if (step > 0 and width <= 0):
-            raise ValueError("Empty Range For 'randrange()'")
+        if (step > 0 and width <= 0) or (step < 0 and width >= 0):
+            raise ValueError("Empty Range For 'randrange()' With Given Step")
 
-        n = (width + step - 1) // step
+        n = abs((width + step - (1 if (step) > 0 else -1)) // step)
         r = await asyncio.to_thread(secrets.randbelow, n)
 
         return start + step * r
@@ -33,7 +33,7 @@ class TRandom:
     async def random(self) -> float:
         bits = await asyncio.to_thread(secrets.randbits, 53)
 
-        return bits / (1 << 53)
+        return (bits + 0.5) / (1 << 53)
     
     async def choice(self, seq: Sequence[T]) -> T:
         if (not seq):
@@ -46,17 +46,14 @@ class TRandom:
         for i in reversed(range(1, len(lst))):
             j = await asyncio.to_thread(secrets.randbelow, i + 1)
             lst[i], lst[j] = lst[j], lst[i]
-    
+
     """
     USED FOR ANOTHER PROJECT, PLEASE IGNORE.
     """
-    async def d_shuffle(self, indices: list[int], password: str) -> list[int]:
+    async def d_shuffle(self, indices: List[int], password: str) -> None:
         seed = int(hashlib.sha256(password.encode()).hexdigest(), 16)
-        indices_copy = indices[:]
 
-        for i in range(len(indices_copy) - 1, 0, -1):
+        for i in range(len(indices) - 1, 0, -1):
             seed = (1103515245 * seed + 12345) & 0x7FFFFFFF
             j = seed % (i + 1)
-            indices_copy[i], indices_copy[j] = indices_copy[j], indices_copy[i]
-        
-        return indices_copy
+            indices[i], indices[j] = indices[j], indices[i]
