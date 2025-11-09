@@ -83,6 +83,37 @@ class TRandom:
         
         return seq[-1]
     
+    async def w_choices(self, seq: Sequence[T], weights: Sequence[float], k: int) -> List[T]:
+        if (not seq or len(seq) != len(weights)):
+            raise ValueError("Sequences Must Have Same Length And Not Be Empty")
+        
+        if (k < 0):
+            raise ValueError("'K' Must Be Non-Negative")
+
+        total = sum(weights)
+
+        if (total == 0):
+            raise ValueError("Sum Of Weights Must Be Greater Than 0")
+
+        c_weights: List[float] = []
+        c_sum = 0
+
+        for w in weights:
+            c_sum += w
+            c_weights.append(c_sum)
+        
+        result: List[T] = []
+
+        for _ in range(k):
+            r = (await self.random()) * total
+
+            for item, cw in zip(seq, c_weights):
+                if (r < cw):
+                    result.append(item)
+                    break
+        
+        return result
+
     async def shuffle(self, lst: List[T]) -> None:
         for i in reversed(range(1, len(lst))):
             # j = await asyncio.to_thread(secrets.randbelow, i + 1)
