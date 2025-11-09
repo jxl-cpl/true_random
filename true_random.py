@@ -1,15 +1,19 @@
-from typing import Sequence, TypeVar, List, Optional
+from typing import Sequence, TypeVar, List, Optional, Tuple
 
 import secrets
 import asyncio
 import hashlib
 import math
+import itertools
 
 T = TypeVar("T")
 
 class TRandom:
-    def __init__(self):
-        self._next_gauss: float | None = None
+    def __init__(self) -> None:
+        self.__next_gauss: Optional[float] = None
+    
+    def _clear_internals(self) -> None:
+        self.__next_gauss = None
 
     async def randint(self, a: int, b: int) -> int:
         if (a > b):
@@ -29,28 +33,29 @@ class TRandom:
         if (step > 0 and width <= 0) or (step < 0 and width >= 0):
             raise ValueError("Empty Range For 'randrange()' With Given Step")
 
-        n = abs((width + step - (1 if (step) > 0 else -1)) // step)
+        n = (abs(width) + abs(step) - 1) // abs(step)
         r = await asyncio.to_thread(secrets.randbelow, n)
 
         return start + step * r
     
     async def gauss(self, mu: float = 0.0, sigma: float = 1.0) -> float:
-        if (self._next_gauss is not None):
-            z = self._next_gauss
-            self._next_gauss = None
+        if (self.__next_gauss is not None):
+            z = self.__next_gauss
+            self.__next_gauss = None
+        else:
+            z0, z1 = await self.p_gauss()
+            self.__next_gauss = z1
+            z = z0
 
-            return mu + z * sigma
-        
-        z0, z1 = await self.p_gauss()
-        self._next_gauss = z1
-
-        return mu + z0 * sigma
+        return mu + sigma * z
     
-    async def p_gauss(self, mu: float = 0.0, sigma: float = 1.0) -> tuple[float, float]:
-        u1 = max(await self.random(), 1e-15)
-        u2 = await self.random()
-        r = (-2.0 * math.log(u1)) ** 0.5
+    async def p_gauss(self) -> Tuple[float, float]:
+        u1 = await self.uniform(1e-12, 1.0)
+        u2 = await self.uniform(0.0, 1.0)
+
+        r = math.sqrt(-2.0 * math.log(u1))
         theta = 2.0 * math.pi * u2
+
         z0 = r * math.cos(theta)
         z1 = r * math.sin(theta)
 
@@ -60,6 +65,17 @@ class TRandom:
         bits = await asyncio.to_thread(secrets.randbits, 53)
 
         return (bits + 0.5) / (1 << 53)
+    
+    async def mix(self, *args: bytes, secure: bool = True) -> bytes:
+        m = hashlib.sha256()
+
+        for a in args:
+            m.update(a)
+            
+            if (secure):
+                m.update(secrets.token_bytes(16))
+        
+        return m.digest()
 
     async def choice(self, seq: Sequence[T]) -> T:
         if (not seq):
@@ -69,48 +85,49 @@ class TRandom:
         return seq[r]
     
     async def w_choice(self, seq: Sequence[T], weights: Sequence[float]) -> T:
-        if (not seq or len(seq) != len(weights)):
-            raise ValueError("Sequences Must Have Same Length And Not Be Empty")
+        if (len(seq) != len(weights)):
+            raise ValueError("Sequence And Weight Lengths Must Match")
+        
+        if (any(w < 0 for w in weights)):
+            raise ValueError("Weights Cannot Be Negative")
         
         total = sum(weights)
-        r = (await self.random()) * total
 
-        for item, w in zip(seq, weights):
-            r -= w
+        if (total <= 0):
+            raise ValueError("Total Weight Must Be Positive")
+        
+        normalized = [w / total for w in weights]
+        cumulative = list(itertools.accumulate(normalized))
+        r = await self.uniform(0.0, 1.0)
 
-            if (r <= 0):
-                return item
+        for i, cw in enumerate(cumulative):
+            if (r <= cw):
+                return seq[i]
         
         return seq[-1]
     
     async def w_choices(self, seq: Sequence[T], weights: Sequence[float], k: int) -> List[T]:
-        if (not seq or len(seq) != len(weights)):
-            raise ValueError("Sequences Must Have Same Length And Not Be Empty")
+        if (len(seq) != len(weights)):
+            raise ValueError("Sequence And Weight Lengths Must Match")
         
-        if (k < 0):
-            raise ValueError("'K' Must Be Non-Negative")
-
+        if (any(w < 0 for w in weights)):
+            raise ValueError("Weights Cannot Be Negative")
+        
         total = sum(weights)
 
-        if (total == 0):
-            raise ValueError("Sum Of Weights Must Be Greater Than 0")
-
-        c_weights: List[float] = []
-        c_sum = 0
-
-        for w in weights:
-            c_sum += w
-            c_weights.append(c_sum)
+        if (total <= 0):
+            raise ValueError("Total Weight Must Be Positive")
         
-        total = c_weights[-1]
+        normalized = [w / total for w in weights]
+        cumulative = list(itertools.accumulate(normalized))
         result: List[T] = []
 
         for _ in range(k):
-            r = (await self.random()) * total
+            r = await self.uniform(0.0, 1.0)
 
-            for item, cw in zip(seq, c_weights):
-                if (r < cw):
-                    result.append(item)
+            for i, cw in enumerate(cumulative):
+                if (r <= cw):
+                    result.append(seq[i])
                     break
         
         return result
