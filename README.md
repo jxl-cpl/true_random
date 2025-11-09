@@ -1,3 +1,4 @@
+## OUTDATED.
 # True-Random
 `True-Random` is a small python library made to generate numbers & doing random operations **securely & async**. It's made for caases when you really want randomness, not just usual `random` stuff.
 
