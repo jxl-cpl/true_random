@@ -3,6 +3,7 @@ from typing import Sequence, TypeVar, List, Optional
 import secrets
 import asyncio
 import hashlib
+import time
 
 T = TypeVar("T")
 
@@ -34,18 +35,48 @@ class TRandom:
         bits = await asyncio.to_thread(secrets.randbits, 53)
 
         return (bits + 0.5) / (1 << 53)
-    
+
     async def choice(self, seq: Sequence[T]) -> T:
         if (not seq):
-            raise IndexError("Cannot Choose From An Empty Sequence.")
+            raise IndexError("Cannot Choose From An Empty Sequence")
 
         r = await asyncio.to_thread(secrets.randbelow, len(seq))
         return seq[r]
+    
+    async def w_choice(self, seq: Sequence[T], weights: Sequence[float]) -> T:
+        if (not seq or len(seq) != len(weights)):
+            raise ValueError("Sequences Must Have Same Length And Not Be Empty")
+        
+        total = sum(weights)
+        r = (await self.random()) * total
+
+        for item, w in zip(seq, weights):
+            r -= w
+
+            if (r <= 0):
+                return item
+        
+        return seq[-1]
     
     async def shuffle(self, lst: List[T]) -> None:
         for i in reversed(range(1, len(lst))):
             j = await asyncio.to_thread(secrets.randbelow, i + 1)
             lst[i], lst[j] = lst[j], lst[i]
+    
+    async def uniform(self, a: float, b: float) -> float:
+        r = await self.random()
+
+        return a + (b - a) * r
+    
+    async def sample(self, seq: Sequence[T], k: int) -> List[T]:
+        if (k > len(seq)):
+            raise ValueError("Sample Larger Than Population")
+
+        lst = list(seq)
+
+        await self.shuffle(lst)
+
+        return lst[:k]
 
     """
     USED FOR ANOTHER PROJECT, PLEASE IGNORE.
