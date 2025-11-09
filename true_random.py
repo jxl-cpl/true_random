@@ -6,6 +6,7 @@ import hashlib
 import math
 import itertools
 import bisect
+import numpy
 
 T = TypeVar("T")
 
@@ -190,10 +191,15 @@ class TRandom:
         r: float = await self.random()
 
         return a + (b - a) * r
-    
-    async def uniforms(self, a: float, b: float, k: int) -> List[float]:
-        randoms: List[float] = await self.randfloats(k)
 
+    async def uniforms(self, a: float, b: float, k: int) -> List[float]:
+        if (k > 100):
+            bits_array: numpy.ndarray = await asyncio.to_thread(lambda: numpy.array([secrets.randbits(53) for _ in range(k)], dtype=numpy.float64))
+            _randoms: numpy.ndarray = (bits_array + 0.5) / (1 << 53)
+
+            return ((a + (b - a) * _randoms).tolist())
+        
+        randoms: List[float] = await self.randfloats(k)
         return [a + (b - a) * r for r in randoms]
     
     async def sample(self, seq: Sequence[T], k: int) -> List[T]:
