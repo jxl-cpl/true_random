@@ -1,4 +1,8 @@
+__version__ = "1.0.0"
+__repo__ = "https://raw.githubusercontent.com/jxl-cpl/true_random/refs/heads/main/true_random.py"
+
 from typing import Sequence, TypeVar, List, Optional, Tuple, Dict, Set
+from pathlib import Path
 
 import secrets
 import asyncio
@@ -7,6 +11,9 @@ import math
 import itertools
 import bisect
 import numpy
+import string
+import sys
+import urllib.request
 
 T = TypeVar("T")
 
@@ -296,14 +303,59 @@ class TRandom:
 
     async def coin_flip(self) -> bool:
         return secrets.randbits(1) == 1
+    
+    async def r_string(self, length: int, alphabet: Optional[str] = None) -> str:
+        if (length < 0):
+            raise ValueError("Length Must Be Non-Negative")
+        
+        if (alphabet is None):
+            alphabet = string.ascii_letters + string.digits
+        
+        n = len(alphabet)
+        indices: List[int] = await asyncio.to_thread(
+            lambda: [secrets.randbelow(n) for _ in range(length)]
+        )
 
-    """
-    USED FOR ANOTHER PROJECT, PLEASE IGNORE.
-    """
-    async def d_shuffle(self, indices: List[int], password: str) -> None:
-        seed = int(hashlib.sha256(password.encode()).hexdigest(), 16)
+        return "".join(alphabet[i] for i in indices)
 
-        for i in range(len(indices) - 1, 0, -1):
-            seed = (1103515245 * seed + 12345) & 0x7FFFFFFF
-            j = seed % (i + 1)
-            indices[i], indices[j] = indices[j], indices[i]
+async def update() -> None:
+    try:
+        def _fetch_remote() -> str:
+            with urllib.request.urlopen(__repo__) as response:
+                if (response.status != 200):
+                    raise RuntimeError(f"[!] Failed To Fetch Update | {response.status}.")
+                
+                return response.read().decode("utf-8")
+        
+        data: str = await asyncio.to_thread(_fetch_remote)
+        remote_version: Optional[str] = None
+
+        for line in data.splitlines():
+            if (line.startswith("__version__")):
+                remote_version = line.split("=")[1].strip().strip('"\'')
+                break
+        
+        if (remote_version is None):
+            print("[!] Couldn't Find Version Information.")
+            return
+        
+        if (remote_version == __version__):
+            print(f"[?] You Are Already Using Latest Version ({__version__}).")
+            return
+        
+        path: Path = Path(sys.argv[0]).resolve()
+
+        def _write_file() -> None:
+            path.write_text(data, encoding="utf-8")
+        
+        await asyncio.to_thread(_write_file)
+
+        print(f"[+] Updated To Latest Version '{remote_version}'.")
+
+    except Exception as error:
+        print(f"[!] Update Failed | {error}.")
+
+if (__name__ == "__main__"):
+    if ("-update" in sys.argv):
+        asyncio.run(update())
+        sys.exit(0)
