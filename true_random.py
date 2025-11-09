@@ -1,25 +1,49 @@
-from typing import Sequence, TypeVar, List, Optional, Tuple
+from typing import Sequence, TypeVar, List, Optional, Tuple, Dict, Set
 
 import secrets
 import asyncio
 import hashlib
 import math
 import itertools
+import bisect
 
 T = TypeVar("T")
 
 class TRandom:
+    __slots__ = ("__next_gauss", "__weight_cache")
+
+    _two_pi: float = 2.0 * math.pi
+    _inv_2_pow_53: float = 1.0 / (1 << 53)
+
     def __init__(self) -> None:
         self.__next_gauss: Optional[float] = None
+        self.__weight_cache: Dict[Tuple[float, ...], List[float]] = {}
     
     def _clear_internals(self) -> None:
         self.__next_gauss = None
+    
+    def _get_cumulative(self, weights: Sequence[float]) -> List[float]:
+        weights_tuple: Tuple[float, ...] = tuple(weights)
+
+        if (weights_tuple in self.__weight_cache):
+            return self.__weight_cache[weights_tuple]
+        
+        total: float = sum(weights)
+
+        if (total <= 0):
+            raise ValueError("Total Weight Must Be Positive")
+
+        normalized: List[float] = [w / total for w in weights]
+        cumulative: List[float] = list(itertools.accumulate(normalized))
+        self.__weight_cache[weights_tuple] = cumulative
+
+        return cumulative
 
     async def randint(self, a: int, b: int) -> int:
         if (a > b):
             raise ValueError("'a' Must Be <= 'b'")
         
-        return await asyncio.to_thread(secrets.randbelow, b - a + 1) + a
+        return secrets.randbelow(b - a + 1) + a
     
     async def randints(self, a: int, b: int, k: int) -> List[int]:
         if (a > b):
@@ -44,7 +68,7 @@ class TRandom:
             raise ValueError("Empty Range For 'randrange()' With Given Step")
 
         n: int = (abs(width) + abs(step) - 1) // abs(step)
-        r: int = await asyncio.to_thread(secrets.randbelow, n)
+        r: int = secrets.randbelow(n)
 
         return start + step * r
     
@@ -66,12 +90,25 @@ class TRandom:
 
         return mu + sigma * z
     
+    async def gausses(self, mu: float = 0.0, sigma: float = 1.0, k: int = 1) -> List[float]:
+        result: List[float] = []
+        pairs_needed: int = (k + 1) // 2
+
+        for _ in range(pairs_needed):
+            z0, z1 = await self._p_gauss()
+            result.append(mu + sigma * z0)
+
+            if (len(result) < k):
+                result.append(mu + sigma * z1)
+        
+        return result[:k]
+    
     async def _p_gauss(self) -> Tuple[float, float]:
         u1: float = await self.uniform(1e-12, 1.0)
         u2: float = await self.uniform(0.0, 1.0)
 
         r: float = math.sqrt(-2.0 * math.log(u1))
-        theta: float = 2.0 * math.pi * u2
+        theta: float = self._two_pi * u2
 
         z0: float = r * math.cos(theta)
         z1: float = r * math.sin(theta)
@@ -79,9 +116,8 @@ class TRandom:
         return z0, z1
     
     async def random(self) -> float:
-        bits: int = await asyncio.to_thread(secrets.randbits, 53)
-
-        return (bits + 0.5) / (1 << 53)
+        bits: int = secrets.randbits(53)
+        return (bits + 0.5) * self._inv_2_pow_53
     
     async def mix(self, *args: bytes, secure: bool = True) -> bytes:
         m: hashlib._Hash = hashlib.sha256()
@@ -102,7 +138,7 @@ class TRandom:
         if (not seq):
             raise IndexError("Cannot Choose From An Empty Sequence")
 
-        r: int = await asyncio.to_thread(secrets.randbelow, len(seq))
+        r: int = secrets.randbelow(len(seq))
         return seq[r]
     
     async def w_choice(self, seq: Sequence[T], weights: Sequence[float]) -> T:
@@ -112,20 +148,11 @@ class TRandom:
         if (any(w < 0 for w in weights)):
             raise ValueError("Weights Cannot Be Negative")
         
-        total: float = sum(weights)
-
-        if (total <= 0):
-            raise ValueError("Total Weight Must Be Positive")
-        
-        normalized: List[float] = [w / total for w in weights]
-        cumulative: List[float] = list(itertools.accumulate(normalized))
+        cumulative: List[float] = self._get_cumulative(weights)
         r: float = await self.uniform(0.0, 1.0)
+        idx: int = bisect.bisect_right(cumulative, r)
 
-        for i, cw in enumerate(cumulative):
-            if (r <= cw):
-                return seq[i]
-        
-        return seq[-1]
+        return seq[min(idx, len(seq) - 1)]
     
     async def w_choices(self, seq: Sequence[T], weights: Sequence[float], k: int) -> List[T]:
         if (len(seq) != len(weights)):
@@ -133,25 +160,14 @@ class TRandom:
         
         if (any(w < 0 for w in weights)):
             raise ValueError("Weights Cannot Be Negative")
-        
-        total: float = sum(weights)
 
-        if (total <= 0):
-            raise ValueError("Total Weight Must Be Positive")
-        
-        normalized: List[float] = [w / total for w in weights]
-        cumulative: List[float] = list(itertools.accumulate(normalized))
+        cumulative: List[float] = self._get_cumulative(weights)
         result: List[T] = []
 
         for _ in range(k):
             r: float = await self.uniform(0.0, 1.0)
-
-            for i, cw in enumerate(cumulative):
-                if (r <= cw):
-                    result.append(seq[i])
-                    break
-            else:
-                result.append(seq[-1])
+            idx: int = bisect.bisect_right(cumulative, r)
+            result.append(seq[min(idx, len(seq) - 1)])
         
         return result
 
@@ -165,8 +181,9 @@ class TRandom:
             lambda: [secrets.randbelow(i + 1) for i in range(1, n)]
         )
 
-        for i, j in enumerate(random_indices, start=1):
-            idx: int = n - i
+        for i in range(len(random_indices)):
+            idx: int = n - i - 1
+            j: int = random_indices[i]
             lst[idx], lst[j] = lst[j], lst[idx]
     
     async def uniform(self, a: float, b: float) -> float:
@@ -185,10 +202,26 @@ class TRandom:
 
         if (k == 0):
             return []
+
+        n: int = len(seq)
+
+        if (k == 1):
+            return [await self.choice(seq)]
+        
+        if (k * 10 < n):
+            seen: Set[int] = set()
+            result: List[T] = []
+
+            while (len(result) < k):
+                idx: int = secrets.randbelow(n)
+
+                if (idx not in seen):
+                    seen.add(idx)
+                    result.append(seq[idx])
+            
+            return result
         
         lst: List[T] = list(seq)
-        n: int = len(lst)
-
         random_indices: List[int] = await asyncio.to_thread(
             lambda: [secrets.randbelow(n - i) for i in range(k)]
         )
@@ -256,7 +289,7 @@ class TRandom:
         return -math.log(u) / lambd
 
     async def coin_flip(self) -> bool:
-        return await asyncio.to_thread(secrets.randbits, 1) == 1
+        return secrets.randbits(1) == 1
 
     """
     USED FOR ANOTHER PROJECT, PLEASE IGNORE.
