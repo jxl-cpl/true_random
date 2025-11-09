@@ -21,6 +21,16 @@ class TRandom:
         
         return await asyncio.to_thread(secrets.randbelow, b - a + 1) + a
     
+    async def randints(self, a: int, b: int, k: int) -> List[int]:
+        if (a > b):
+            raise ValueError("'a' Must Be <= 'b'")
+        
+        range_size: int = b - a + 1
+
+        return await asyncio.to_thread(
+            lambda: [secrets.randbelow(range_size) + a for _ in range(k)]
+        )
+    
     async def randrange(self, start: int, stop: Optional[int] = None, step: int = 1) -> int:
         if (step == 0):
             raise ValueError("Step Must Not Be '0'")
@@ -37,6 +47,13 @@ class TRandom:
         r: int = await asyncio.to_thread(secrets.randbelow, n)
 
         return start + step * r
+    
+    async def randfloats(self, k: int) -> List[float]:
+        bits_list: List[int] = await asyncio.to_thread(
+            lambda: [secrets.randbits(53) for _ in range(k)]
+        )
+
+        return [(bits + 0.5) / (1 << 53) for bits in bits_list]
     
     async def gauss(self, mu: float = 0.0, sigma: float = 1.0) -> float:
         if (self.__next_gauss is not None):
@@ -157,6 +174,11 @@ class TRandom:
 
         return a + (b - a) * r
     
+    async def uniforms(self, a: float, b: float, k: int) -> List[float]:
+        randoms: List[float] = await self.randfloats(k)
+
+        return [a + (b - a) * r for r in randoms]
+    
     async def sample(self, seq: Sequence[T], k: int) -> List[T]:
         if (k > len(seq)):
             raise ValueError("Sample Larger Than Population")
@@ -176,6 +198,65 @@ class TRandom:
             lst[i], lst[j] = lst[j], lst[i]
         
         return lst[:k]
+    
+    async def token_bytes(self, n: int) -> bytes:
+        if (n < 0):
+            raise ValueError("Byte Count Must Be Non-Negative")
+        
+        return await asyncio.to_thread(secrets.token_bytes, n)
+    
+    async def token_hex(self, n: int) -> str:
+        if (n < 0):
+            raise ValueError("Length Must Be Non-Negative")
+        
+        return await asyncio.to_thread(secrets.token_hex, n)
+
+    async def gamma(self, alpha: float, beta_param: float = 1.0) -> float:
+        if (alpha <= 0 or beta_param <= 0):
+            raise ValueError("Alpha And Beta Must Be Positive")
+        
+        if (alpha < 1):
+            u: float = await self.uniform(0.0, 1.0)
+
+            return await self.gamma(alpha + 1.0, beta_param) * (u ** (1.0 / alpha))
+        
+        d: float = alpha - 1.0 / 3.0
+        c: float = 1.0 / math.sqrt(9.0 * d)
+
+        while (True):
+            z: float = await self.gauss()
+            v: float = (1.0 + c * z) ** 3
+
+            if (v <= 0):
+                continue
+
+            u: float = await self.uniform(0.0, 1.0)
+
+            if (u < 1.0 - 0.0331 * (z ** 4)):
+                return d * v / beta_param
+            
+            if (math.log(u) < 0.5 * (z ** 2) + d * (1.0 - v + math.log(v))):
+                return d * v / beta_param
+
+    async def beta(self, alpha: float, beta_param: float) -> float:
+        if (alpha <= 0 or beta_param <= 0):
+            raise ValueError("Alpha And Beta Must Be Positive")
+        
+        x: float = await self.gamma(alpha, 1.0)
+        y: float = await self.gamma(beta_param, 1.0)
+
+        return x / (x + y)
+    
+    async def exponential(self, lambd: float = 1.0) -> float:
+        if (lambd <= 0):
+            raise ValueError("Lambda Must Be Positive")
+        
+        u: float = await self.uniform(1e-12, 1.0)
+
+        return -math.log(u) / lambd
+
+    async def coin_flip(self) -> bool:
+        return await asyncio.to_thread(secrets.randbits, 1) == 1
 
     """
     USED FOR ANOTHER PROJECT, PLEASE IGNORE.
