@@ -102,6 +102,7 @@ class TRandom:
             c_sum += w
             c_weights.append(c_sum)
         
+        total = c_weights[-1]
         result: List[T] = []
 
         for _ in range(k):
