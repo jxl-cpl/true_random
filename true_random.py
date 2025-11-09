@@ -3,11 +3,14 @@ from typing import Sequence, TypeVar, List, Optional
 import secrets
 import asyncio
 import hashlib
-import time
+import math
 
 T = TypeVar("T")
 
 class TRandom:
+    def __init__(self):
+        self._next_gauss: float | None = None
+
     async def randint(self, a: int, b: int) -> int:
         if (a > b):
             raise ValueError("'a' Must Be <= 'b'")
@@ -30,6 +33,28 @@ class TRandom:
         r = await asyncio.to_thread(secrets.randbelow, n)
 
         return start + step * r
+    
+    async def gauss(self, mu: float = 0.0, sigma: float = 1.0) -> float:
+        if (self._next_gauss is not None):
+            z = self._next_gauss
+            self._next_gauss = None
+
+            return mu + z * sigma
+        
+        z0, z1 = await self.p_gauss()
+        self._next_gauss = z1
+
+        return mu + z0 * sigma
+    
+    async def p_gauss(self, mu: float = 0.0, sigma: float = 1.0) -> tuple[float, float]:
+        u1 = max(await self.random(), 1e-15)
+        u2 = await self.random()
+        r = (-2.0 * math.log(u1)) ** 0.5
+        theta = 2.0 * math.pi * u2
+        z0 = r * math.cos(theta)
+        z1 = r * math.sin(theta)
+
+        return z0, z1
     
     async def random(self) -> float:
         bits = await asyncio.to_thread(secrets.randbits, 53)
@@ -60,7 +85,9 @@ class TRandom:
     
     async def shuffle(self, lst: List[T]) -> None:
         for i in reversed(range(1, len(lst))):
-            j = await asyncio.to_thread(secrets.randbelow, i + 1)
+            # j = await asyncio.to_thread(secrets.randbelow, i + 1)
+            j = secrets.randbelow(i + 1)
+
             lst[i], lst[j] = lst[j], lst[i]
     
     async def uniform(self, a: float, b: float) -> float:
