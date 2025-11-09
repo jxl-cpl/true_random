@@ -1,4 +1,4 @@
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __repo__ = "https://raw.githubusercontent.com/jxl-cpl/true_random/refs/heads/main/true_random.py"
 
 from typing import Sequence, TypeVar, List, Optional, Tuple, Dict, Set
