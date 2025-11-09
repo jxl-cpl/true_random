@@ -19,5 +19,5 @@
 ---
 
 ## Installation
-Just include `main.py` in your project.
+Just include `true_random.py` in your project.
 Works with python 3.10+.
